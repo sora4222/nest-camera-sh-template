@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: make setup
+      - run: make check
+
+  test:
+    runs-on: ubuntu-latest
+    # Tests that need PostgreSQL start it with Testcontainers (Docker is on the runner).
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: make setup
+      - run: make test
+
+  size:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@v6
+      # HEAD is the PR merged into its base; HEAD^1 is that base, so a re-run measures the
+      # same change even after the base branch moves.
+      - run: uv run --no-project scripts/pr_size.py HEAD^1

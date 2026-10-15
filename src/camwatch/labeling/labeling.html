@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Label clips</title>
+<style>
+  :root { color-scheme: light dark; font-family: system-ui, sans-serif; }
+  body { margin: 0 auto; max-width: 960px; padding: 16px; }
+  header { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+  video { width: 100%; background: #000; aspect-ratio: 16 / 9; border-radius: 6px; }
+  .labels { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; margin-top: 12px; }
+  .labels button { font-size: 1.25rem; padding: 16px; border-radius: 8px; cursor: pointer; }
+  .muted { opacity: 0.7; font-size: 0.9rem; }
+  #done { display: none; font-size: 1.25rem; text-align: center; padding: 48px 0; }
+</style>
+</head>
+<body>
+<header>
+  <h1 id="title">Label clips</h1>
+  <span id="remaining" class="muted"></span>
+</header>
+<main id="clip">
+  <video id="video" controls autoplay loop muted></video>
+  <p id="name" class="muted"></p>
+  <div id="labels" class="labels"></div>
+</main>
+<p id="done">Every clip is labeled.</p>
+<script>
+  const el = (id) => document.getElementById(id);
+  let clip = null, labels = [], busy = false;
+
+  async function next() {
+    const answer = await (await fetch("/api/next")).json();
+    clip = answer.clip;
+    labels = answer.labels;
+    el("title").textContent = `Label clips for ${answer.model}`;
+    el("remaining").textContent = `${answer.remaining} to label`;
+    el("clip").style.display = clip ? "" : "none";
+    el("done").style.display = clip ? "none" : "block";
+    if (!clip) return;
+    el("video").src = `/clips/${encodeURIComponent(clip)}`;
+    el("name").textContent = clip;
+    el("labels").replaceChildren(...labels.map((name, i) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.textContent = i < 9 ? `${name} (${i + 1})` : name;
+      button.onclick = () => label(name);
+      return button;
+    }));
+  }
+
+  async function label(name) {
+    if (!clip || busy) return;
+    busy = true;
+    const response = await fetch("/api/label", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ clip, label: name }),
+    });
+    busy = false;
+    if (!response.ok) {
+      alert((await response.json()).error);
+      if (response.status !== 409) return;
+    }
+    await next();
+  }
+
+  document.addEventListener("keydown", (e) => {
+    const name = labels[Number(e.key) - 1];
+    if (name) label(name);
+  });
+  next();
+</script>
+</body>
+</html>

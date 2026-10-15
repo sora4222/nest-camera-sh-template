@@ -1,0 +1,97 @@
+import fcntl
+import threading
+from datetime import UTC, datetime, timedelta
+
+from camwatch.communications.switches import DoNotDisturb, Switches
+from camwatch.domain import Urgency
+
+NOW = datetime(2026, 6, 1, 20, 0, tzinfo=UTC)
+
+
+def test_nothing_is_switched_before_anything_is_set(tmp_path):
+    switches = Switches(tmp_path / "switches.json")
+    assert switches.do_not_disturb(NOW) is None
+
+
+def test_do_not_disturb_lasts_until_its_end_and_is_seen_by_another_reader(tmp_path):
+    path = tmp_path / "state" / "switches.json"
+    Switches(path).set_do_not_disturb(NOW + timedelta(hours=2))
+    reader = Switches(path)
+    assert reader.do_not_disturb(NOW) == DoNotDisturb(NOW + timedelta(hours=2), None)
+    assert reader.do_not_disturb(NOW + timedelta(hours=2)) is None
+
+
+def test_do_not_disturb_can_say_which_urgencies_get_through_and_be_switched_off(tmp_path):
+    switches = Switches(tmp_path / "switches.json")
+    switches.set_do_not_disturb(NOW + timedelta(hours=1), allow=[Urgency.URGENT])
+    dnd = switches.do_not_disturb(NOW)
+    assert dnd is not None and dnd.allow == (Urgency.URGENT,)
+    switches.clear_do_not_disturb()
+    assert switches.do_not_disturb(NOW) is None
+
+
+def test_a_broken_file_counts_as_nothing_switched(tmp_path, caplog):
+    path = tmp_path / "switches.json"
+    path.write_text("{not json")
+    switches = Switches(path)
+    assert switches.do_not_disturb(NOW) is None
+    assert "switches" in caplog.text
+    path.write_text('{"dnd": {"until": "soon"}}')
+    assert switches.do_not_disturb(NOW) is None
+
+
+def test_default_file_is_in_the_users_state_folder(tmp_path, monkeypatch):
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path))
+    assert Switches.default().path == tmp_path / "camwatch" / "switches.json"
+
+
+def test_do_not_disturb_without_a_time_zone_counts_as_broken(tmp_path, caplog):
+    path = tmp_path / "switches.json"
+    path.write_text('{"dnd": {"until": "2026-06-01T22:00:00"}}')
+    assert Switches(path).do_not_disturb(NOW) is None
+    assert "broken" in caplog.text
+
+
+def test_changes_from_many_threads_at_once_are_all_kept(tmp_path):
+    path = tmp_path / "switches.json"
+    errors: list[BaseException] = []
+
+    def flip(n: int) -> None:
+        switches = Switches(path)
+        try:
+            for i in range(40):
+                if n % 2:
+                    switches._change(other=i % 2 == 0)  # a second switch an app might add
+                else:
+                    switches.set_do_not_disturb(NOW + timedelta(minutes=i + 1))
+        except BaseException as error:
+            errors.append(error)
+
+    workers = [threading.Thread(target=flip, args=(n,)) for n in range(8)]
+    for worker in workers:
+        worker.start()
+    for worker in workers:
+        worker.join()
+    assert errors == []
+    reader = Switches(path)
+    assert reader._read()["other"] is False
+    assert reader.do_not_disturb(NOW) == DoNotDisturb(NOW + timedelta(minutes=40), None)
+    assert [p.name for p in tmp_path.iterdir() if p.name != ".switches.json.lock"] == [
+        "switches.json"
+    ]
+
+
+def test_a_change_waits_for_another_process_holding_the_lock_file(tmp_path):
+    path = tmp_path / "switches.json"
+    done = threading.Event()
+    with (tmp_path / ".switches.json.lock").open("a") as other:
+        fcntl.flock(other, fcntl.LOCK_EX)  # as `camwatch dnd` in another process would
+        worker = threading.Thread(
+            target=lambda: (Switches(path).clear_do_not_disturb(), done.set())
+        )
+        worker.start()
+        assert not done.wait(0.2)
+        fcntl.flock(other, fcntl.LOCK_UN)
+    worker.join(5)
+    assert done.is_set()
+    assert Switches(path)._read() == {"dnd": None}

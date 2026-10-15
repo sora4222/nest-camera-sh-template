@@ -1,0 +1,122 @@
+{
+  "interactionModel": {
+    "languageModel": {
+      "invocationName": "camera watch",
+      "intents": [
+        {
+          "name": "StatusIntent",
+          "samples": [
+            "what's happening",
+            "what is happening",
+            "status",
+            "what's going on",
+            "how is it going"
+          ]
+        },
+        {
+          "name": "SetStateIntent",
+          "samples": [
+            "i'm {state}",
+            "i am {state}",
+            "we're {state}",
+            "move to {state}"
+          ],
+          "slots": [
+            {
+              "name": "state",
+              "type": "STATE_NAME"
+            }
+          ]
+        },
+        {
+          "name": "DoNotDisturbIntent",
+          "samples": [
+            "do not disturb for {duration}",
+            "be quiet for {duration}",
+            "do not disturb"
+          ],
+          "slots": [
+            {
+              "name": "duration",
+              "type": "AMAZON.DURATION"
+            }
+          ]
+        },
+        {
+          "name": "DurationIntent",
+          "samples": [
+            "{duration}"
+          ],
+          "slots": [
+            {
+              "name": "duration",
+              "type": "AMAZON.DURATION"
+            }
+          ]
+        },
+        {
+          "name": "StopDoNotDisturbIntent",
+          "samples": [
+            "stop do not disturb",
+            "turn off do not disturb",
+            "you can talk again"
+          ]
+        },
+        {
+          "name": "AMAZON.HelpIntent",
+          "samples": []
+        },
+        {
+          "name": "AMAZON.FallbackIntent",
+          "samples": []
+        },
+        {
+          "name": "AMAZON.NavigateHomeIntent",
+          "samples": []
+        },
+        {
+          "name": "AMAZON.StopIntent",
+          "samples": []
+        },
+        {
+          "name": "AMAZON.CancelIntent",
+          "samples": []
+        },
+        {
+          "name": "LastEventIntent",
+          "samples": [
+            "what happened last",
+            "what was the last thing"
+          ]
+        }
+      ],
+      "types": [
+        {
+          "name": "STATE_NAME",
+          "values": [
+            {
+              "name": {
+                "value": "back at work"
+              }
+            },
+            {
+              "name": {
+                "value": "on a break"
+              }
+            },
+            {
+              "name": {
+                "value": "taking a break"
+              }
+            },
+            {
+              "name": {
+                "value": "watching"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,130 @@
+# Example private config. `make setup` copies it to config.toml (git-ignored).
+# Real names, devices and paths go only in config.toml. Secrets go in .env.
+# Everything is off until you turn it on: the defaults are a video file camera, the log
+# speaker and a memory event log.
+
+# TODO(template): set the State your app starts in.
+[app]
+start_state = "no_one_at_desk"
+timezone = "UTC"  # IANA zone of the camera, e.g. "Australia/Melbourne"
+
+# Which implementation to use for each part (`make config` lists what is available).
+[parts]
+camera = "video_file"   # or "nest"
+event_log = "memory"    # or "postgres" (CAMWATCH_DATABASE_URL in .env, `make db`)
+state_store = "memory"  # or "postgres", to go back to the last State after a restart
+presence = "off"
+communications = "standard"
+
+[paths]
+# Model files, clips and labels. Can be a folder on a NAS. Relative paths below are inside it.
+# private_data = "/mnt/nas/camwatch"
+
+# Camera "video_file": a saved clip played as if it were the camera.
+[camera]
+file = "clips/example.mp4"
+every_seconds = 0.5
+loop = true
+
+# Camera "nest": a Google Nest camera (secrets in .env).
+# [camera]
+# device = "Office"       # the camera's name in the Google Home app
+# size = 720              # picture height in pixels
+# retry_seconds = 30
+
+[watcher]
+check_seconds = 0.25
+camera_offline_minutes = 10
+
+# TODO(template): one table per Model your States run. Model X is a ready-trained person
+# detector (`make model-x` makes its file).
+[models.model_x]
+file = "models/model_x.onnx"
+runtime = "auto"   # auto, cpu, amd or nvidia
+min_score = 0.5
+[models.model_x.labels]
+1 = "person"
+
+# TODO(template): how each State is announced. Events: <state>_entered, <state>_left,
+# <state>_lasted (after lasted_minutes) and <state>_reminder (further apart each time).
+[states.person_at_desk]
+urgency = "normal"
+lasted_minutes = 50
+reminder_first_minutes = 5
+reminder_max_minutes = 40
+
+[states.on_break]
+lasted_minutes = 10
+
+# TODO(template): what is said. An Event with no template here is logged, not said.
+# Templates can use [names], the Event's details and {subject_action}.
+[messages]
+person_at_desk_lasted = "You have been at the desk for {minutes} minutes. Time for a break."
+person_at_desk_reminder = "Still at the desk after {minutes} minutes."
+on_break_lasted = "Your break is over."
+camera_offline = "The camera is offline."
+login_expired = "The camera needs you to log in again."
+
+[names]
+subject = "you"
+
+[[listeners]]
+name = "Me"
+
+[[speakers]]
+name = "Log"
+kind = "log"
+# urgencies = ["normal", "urgent"]  # which Urgencies this Speaker says (default: all)
+
+# A Google Home / Nest speaker; speech made here with Piper (`make setup EXTRAS=google`).
+# [[speakers]]
+# name = "Kitchen"
+# kind = "google"
+# device = "Kitchen speaker"                 # its name in the Google Home app
+# voice = "voices/en_US-lessac-medium.onnx"  # Piper voice, inside private_data
+# serve_port = 8766
+
+# An Alexa device through Voice Monkey (CAMWATCH_VOICE_MONKEY_TOKEN in .env).
+# [[speakers]]
+# name = "Echo"
+# kind = "voice_monkey"
+# device = "office-echo"
+
+# An Alexa device through Amazon's unofficial web API (CAMWATCH_ALEXA_REFRESH_TOKEN in .env).
+# [[speakers]]
+# name = "Echo"
+# kind = "alexa_web"
+# device = "Office Echo"
+# domain = "amazon.com"
+
+# An Alexa device through the Smart Home skill and routines (docs/alexa.md).
+# [[speakers]]
+# name = "Echo"
+# kind = "alexa"
+# region = "NA"  # NA, EU or FE
+
+# Repeating quiet times; `allow` lists the Urgencies still spoken.
+# [[quiet_hours]]
+# days = ["mon", "tue", "wed", "thu", "fri"]
+# start = "22:00"
+# end = "07:00"
+# allow = ["urgent"]
+
+[communications]
+dnd_allow = ["urgent"]
+repeat_seconds = 30
+
+# The labeling page (`make label`): clips saved from the Google Home app, labeled for one Model.
+[labeling]
+model = "model_x"
+clips = "clips"
+labels = ["person", "nobody"]
+
+# The Alexa skill (docs/alexa.md): "Alexa, ask camera watch what's happening".
+[alexa_skill]
+enabled = false
+invocation = "camera watch"
+port = 8767
+tunnel = "cloudflare"   # or "tailscale"
+# hostname = "watch.example.com"
+# smart_home = true     # also serve /alexa/smart-home for speaker kind "alexa"

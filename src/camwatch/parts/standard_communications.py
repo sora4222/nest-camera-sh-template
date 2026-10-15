@@ -1,0 +1,190 @@
+"""Communications handler "standard": the one gate every Announcement goes through.
+
+For each Event it logs the kind and Urgency (never spoken). Log-only Events stop there.
+Others are held back by, in order: Quiet Hours and Do Not Disturb (each lets only its
+`allow` Urgencies through), every Listener being Away (Unknown does not hold back), no
+Message template, or the same text said less than `repeat_seconds` ago. Then each Speaker
+for that Urgency says it, from its own queue and thread (Urgent first), so the watcher
+never waits for a speaker.
+"""
+
+import logging
+import threading
+from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass
+from datetime import datetime, timedelta
+from typing import Any
+from zoneinfo import ZoneInfo
+
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
+
+from camwatch.communications.messages import message_text
+from camwatch.communications.quiet_hours import active_quiet_hours
+from camwatch.communications.speaker_queue import SpeakerQueue
+from camwatch.communications.switches import Switches
+from camwatch.config import Config, ConfigError, QuietHours
+from camwatch.domain import Event, Presence, Urgency
+from camwatch.interfaces import PresenceCheck, Speaker
+from camwatch.registry import COMMUNICATIONS, DEFAULT, PRESENCE, SPEAKER
+
+log = logging.getLogger(__name__)
+
+
+class CommunicationOptions(BaseModel):
+    """The `[communications]` options."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    dnd_allow: list[Urgency] = [Urgency.URGENT]
+    """Urgencies Do Not Disturb lets through, unless `camwatch dnd --allow` says otherwise."""
+    repeat_seconds: float = Field(30, ge=0)
+    """The same text is not said again within this many seconds."""
+
+
+@dataclass(frozen=True)
+class RoutedSpeaker:
+    """A Speaker and the Urgencies it says (`[[speakers]] urgencies`, default all)."""
+
+    speaker: Speaker
+    urgencies: frozenset[Urgency]
+
+
+class StandardCommunications:
+    """Decides whether and where each Event is said (see the module docstring)."""
+
+    def __init__(
+        self,
+        *,
+        speakers: Sequence[RoutedSpeaker],
+        presence: PresenceCheck,
+        listeners: Sequence[str],
+        quiet_hours: Sequence[QuietHours],
+        zone: ZoneInfo,
+        messages: Mapping[str, str],
+        names: Mapping[str, str],
+        switches: Switches,
+        options: CommunicationOptions | None = None,
+    ) -> None:
+        """`zone` is the camera's time zone, which Quiet Hours are read in."""
+        self._speakers = [(SpeakerQueue(r.speaker), r.urgencies) for r in speakers]
+        self._presence = presence
+        self._listeners = list(listeners)
+        self._quiet_hours = list(quiet_hours)
+        self._zone = zone
+        self._messages = dict(messages)
+        self._names = dict(names)
+        self._switches = switches
+        self._options = options or CommunicationOptions()
+        self._last_said: dict[str, datetime] = {}
+
+    def handle(self, event: Event) -> None:
+        """Log `event` and announce it if it is not log only and the rules allow it."""
+        if not event.announce:
+            log.info("%s (%s) %s: log only", event.kind, event.urgency, event.details)
+            return
+        self._announce(event)
+
+    def _announce(self, event: Event) -> None:
+        reason = self._held_back(event)
+        text = None
+        if reason is None:
+            text = message_text(self._messages, self._names, event)
+            if text is None:
+                reason = "no message template"
+            elif self._said_recently(text, event.at):
+                reason = "said less than repeat_seconds ago"
+        if reason or text is None:
+            log.info("%s (%s) %s: not said, %s", event.kind, event.urgency, event.details, reason)
+            return
+        routed = [speaker for speaker, urgencies in self._speakers if event.urgency in urgencies]
+        if not routed:
+            log.info("%s (%s) %s: no Speaker said it", event.kind, event.urgency, event.details)
+            return
+        self._last_said[text] = event.at
+        done = _AllFailed(len(routed), lambda: self._forget(text, event))
+        for speaker in routed:
+            speaker.put(text, event.urgency, done)
+        log.info("%s (%s) %s: saying %r", event.kind, event.urgency, event.details, text)
+
+    def _forget(self, text: str, event: Event) -> None:
+        """No Speaker said `text`, so it does not count as said."""
+        if self._last_said.get(text) == event.at:
+            del self._last_said[text]
+        log.info("%s (%s) %s: no Speaker said it", event.kind, event.urgency, event.details)
+
+    def wait_until_said(self, timeout: float | None = None) -> bool:
+        """Wait until every Speaker has said what it was given; False if `timeout` ran out.
+
+        `timeout` is for each Speaker in turn.
+        """
+        return all([speaker.wait(timeout) for speaker, _ in self._speakers])
+
+    def _held_back(self, event: Event) -> str | None:
+        """Why `event` must not be said now, or None."""
+        for period in active_quiet_hours(self._quiet_hours, event.at, self._zone):
+            if event.urgency not in period.allow:
+                return "Quiet Hours"
+        dnd = self._switches.do_not_disturb(event.at)
+        if dnd:
+            allow = self._options.dnd_allow if dnd.allow is None else dnd.allow
+            if event.urgency not in allow:
+                return "Do Not Disturb"
+        if self._listeners and all(
+            self._presence.check(name) is Presence.AWAY for name in self._listeners
+        ):
+            return "every Listener is Away"
+        return None
+
+    def _said_recently(self, text: str, at: datetime) -> bool:
+        last = self._last_said.get(text)
+        return last is not None and at - last < timedelta(seconds=self._options.repeat_seconds)
+
+
+class _AllFailed:
+    """Calls `then` once every one of `count` Speakers has failed to say a text."""
+
+    def __init__(self, count: int, then: Callable[[], None]) -> None:
+        self._left, self._said, self._then = count, False, then
+        self._lock = threading.Lock()
+
+    def __call__(self, said: bool) -> None:
+        with self._lock:
+            self._left -= 1
+            self._said = self._said or said
+            if self._left or self._said:
+                return
+        self._then()
+
+
+def _routed(config: Config) -> list[RoutedSpeaker]:
+    """One Speaker per `[[speakers]]` entry, with the Urgencies it says."""
+    routed = []
+    for settings in config.speakers:
+        wanted = (settings.model_extra or {}).get("urgencies", list(Urgency))
+        try:
+            urgencies = frozenset(Urgency(value) for value in wanted)
+        except (TypeError, ValueError):
+            raise ConfigError(f"speakers {settings.name}: urgencies {wanted!r}") from None
+        speaker = DEFAULT.create(SPEAKER, settings.kind, config, settings.model_dump())
+        routed.append(RoutedSpeaker(speaker, urgencies))
+    return routed
+
+
+@DEFAULT.part(COMMUNICATIONS, "standard")
+def _create(config: Config, options: Mapping[str, Any]) -> StandardCommunications:
+    try:
+        parsed = CommunicationOptions.model_validate(dict(options))
+    except ValidationError as error:
+        problems = "; ".join(f"communications.{e['loc'][0]}: {e['msg']}" for e in error.errors())
+        raise ConfigError(problems) from None
+    return StandardCommunications(
+        speakers=_routed(config),
+        presence=DEFAULT.create(PRESENCE, config.parts.presence, config, config.presence),
+        listeners=[listener.name for listener in config.listeners],
+        quiet_hours=config.quiet_hours,
+        zone=config.zone,
+        messages=config.messages,
+        names=config.names,
+        switches=Switches.default(),
+        options=parsed,
+    )
