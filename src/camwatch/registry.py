@@ -68,6 +68,12 @@ class Registry:
 
         return register
 
+    def copy(self) -> "Registry":
+        """A new registry with the same factories, to add to without changing this one."""
+        copied = Registry()
+        copied._factories = dict(self._factories)
+        return copied
+
     def names(self, slot: Slot[Any]) -> list[str]:
         """Registered names for `slot`, sorted."""
         return sorted(name for kind, name in self._factories if kind == slot.kind)
