@@ -8,6 +8,10 @@ Words used in code, docs and commits. A new app adds its own words here (for exa
 The thing the camera watches for: a pet, a person, a ball, what is on a screen.
 _Avoid_: target, object
 
+**Frame**:
+One picture from the camera.
+_Avoid_: image, snapshot
+
 **Subject Action**:
 What the Subject is doing, such as "at the desk" or "on Instagram".
 _Avoid_: activity, behaviour

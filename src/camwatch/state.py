@@ -5,8 +5,9 @@ while the app is in it (`models`), and `next` reads the Model Output of each Fra
 says which State comes next, with any Events and the Subject Action.
 
 A State is a Pydantic model: its fields are what it remembers between Frames (such as
-how many Frames in a row showed a person). The State is saved each time it changes, and
-the app goes back to it after a restart.
+how many Frames in a row showed a person). Each time the app moves to another State, the
+new State is saved; after a restart the app goes back to it, with its fields as they were
+when it was entered.
 """
 
 from collections.abc import Mapping
