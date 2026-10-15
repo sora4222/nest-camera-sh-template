@@ -65,7 +65,7 @@ def test_create_uses_registered_factory_with_part_options():
     registry.add(PRESENCE, "wifi", factory)
     config = make_config(presence={"timeout_minutes": 10})
     part = registry.create(PRESENCE, "wifi", config, config.part_options("presence"))
-    assert part.check("Partner") is Presence.AWAY
+    assert part.check("Me") is Presence.AWAY
     assert seen == [{"timeout_minutes": 10}]
 
 

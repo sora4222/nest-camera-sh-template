@@ -20,7 +20,7 @@ def test_memory_event_log_returns_newest_first():
 
 
 def test_presence_off_is_always_unknown():
-    assert PresenceOff().check("Partner") is Presence.UNKNOWN
+    assert PresenceOff().check("Me") is Presence.UNKNOWN
 
 
 def test_log_speaker_writes_text_to_the_log(caplog):

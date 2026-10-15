@@ -37,7 +37,7 @@ def test_a_daytime_period_and_many_periods():
     assert active_quiet_hours([WEEKNIGHTS, LUNCH], at(6, 13), UTC_ZONE) == []
 
 
-def test_quiet_hours_are_read_in_the_litter_box_time_zone():
+def test_quiet_hours_are_read_in_the_camera_time_zone():
     melbourne = ZoneInfo("Australia/Melbourne")  # UTC+10 in June
     assert active_quiet_hours([WEEKNIGHTS], at(1, 12), melbourne) == [WEEKNIGHTS]
     assert active_quiet_hours([WEEKNIGHTS], at(1, 22), melbourne) == []

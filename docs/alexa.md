@@ -22,6 +22,7 @@ def is_it_busy(context: SkillContext, slots: Mapping[str, str]) -> Answer:
     busy = context.status.state_name == "person_at_desk"
     return say("Yes." if busy else "No.")
 
+
 CUSTOM_INTENTS = (Intent("BusyIntent", is_it_busy, ("is anyone at the desk",)),)
 ```
 

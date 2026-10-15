@@ -6,7 +6,7 @@ from camwatch.alexa_smart_home.directives import SmartHome
 from camwatch.alexa_smart_home.sensors import Sensor
 
 NOW = datetime(2026, 1, 1, 8, 30, tzinfo=UTC)
-POOP = Sensor("poop", "camwatch-desk-lasted", "Litter box poop")
+LASTED = Sensor("desk_lasted", "camwatch-desk-lasted", "Camera watch desk lasted")
 
 
 class Grant:
@@ -26,7 +26,7 @@ def directive(namespace: str, name: str, **extra) -> dict:
 
 
 def home(grant: Grant | None = None) -> SmartHome:
-    return SmartHome([POOP], grant or Grant(), FakeClock(NOW))
+    return SmartHome([LASTED], grant or Grant(), FakeClock(NOW))
 
 
 def test_discovery_lists_a_motion_sensor_per_message():
@@ -34,7 +34,7 @@ def test_discovery_lists_a_motion_sensor_per_message():
     assert answer["event"]["header"]["name"] == "Discover.Response"
     [endpoint] = answer["event"]["payload"]["endpoints"]
     assert endpoint["endpointId"] == "camwatch-desk-lasted"
-    assert endpoint["friendlyName"] == "Litter box poop"
+    assert endpoint["friendlyName"] == "Camera watch desk lasted"
     assert endpoint["displayCategories"] == ["MOTION_SENSOR"]
     motion = endpoint["capabilities"][0]
     assert motion["interface"] == "Alexa.MotionSensor"

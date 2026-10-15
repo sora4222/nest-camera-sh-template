@@ -27,5 +27,5 @@ def local(day: int, hour: int, minute: int = 0) -> datetime:
         (local(25, 8), "October 25 at 8 AM"),
     ],
 )
-def test_times_are_said_in_the_litter_box_zone_relative_to_today(at, said):
+def test_times_are_said_in_the_camera_zone_relative_to_today(at, said):
     assert spoken_time(at, NOW, ZONE) == said

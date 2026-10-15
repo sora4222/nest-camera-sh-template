@@ -74,7 +74,7 @@ class Setup:
         self.handler = StandardCommunications(
             speakers=speakers or [RoutedSpeaker(self.speaker, frozenset(Urgency))],
             presence=self.presence,
-            listeners=["Partner"],
+            listeners=["Me"],
             quiet_hours=list(quiet),
             zone=ZoneInfo("UTC"),
             messages=MESSAGES,
